@@ -1,0 +1,166 @@
+version: '3'
+
+services:
+  proxy:
+    image: jwilder/nginx-proxy:0.4.0
+    labels:
+      - "com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy"
+    hostname: proxy
+    networks:
+      local:
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+      - proxy-certs:/etc/nginx/certs:ro
+      - proxy-dhparam:/etc/nginx/dhparam
+      - proxy-vhostd:/etc/nginx/vhost.d
+      - proxy-challenge:/usr/share/nginx/html
+    restart: unless-stopped
+
+#  proxy_ssl:
+#    image: jrcs/letsencrypt-nginx-proxy-companion:v1.8.1
+#    hostname: proxy-ssl
+#    networks:
+#      local:
+#    volumes:
+#      - /var/run/docker.sock:/var/run/docker.sock:ro
+#      - proxy-certs:/etc/nginx/certs:rw
+#      - proxy-dhparam:/etc/nginx/dhparam:rw
+#      - proxy-vhostd:/etc/nginx/vhost.d
+#      - proxy-challenge:/usr/share/nginx/html
+#    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:5.0.4
+    hostname: grafana-server
+    networks:
+      local:
+    ports:
+      - 127.0.0.1:3000:3000
+    volumes:
+      - grafana-conf:/etc/grafana
+      - grafana-data:/var/lib/grafana
+    restart: unless-stopped
+    environment:
+      - VIRTUAL_HOST=192.168.0.2
+      - VIRTUAL_PORT=3000
+#      - LETSENCRYPT_HOST=grafana-server
+#      - LETSENCRYPT_EMAIL=admin@grafana-server
+      - GF_SERVER_ROOT_URL=http://192.168.0.2/
+      - GF_DATABASE_URL=mysql://grafana_u:grafana_user_passwd@perconadb:3306/grafana_db
+      - GF_SMTP_ENABLED=true
+      - GF_SMTP_HOST=smtp:25
+      - GF_SMTP_USER=smtp_u
+      - GF_SMTP_PASSWORD=smtp_passwd
+      - GF_SMTP_SKIP_VERIFY=true
+      - GF_SMTP_FTOM_ADDRESS=noreply@grafana.local
+      - GF_SMTP_FROM_NAME=Mr.Bot
+      - GF_SMTP_EHLO_IDENTITY=smtp-server
+
+  prometheus:
+    image: prom/prometheus:v2.2.1
+    hostname: prometheus-server
+    networks:
+      local:
+    ports:
+      - 127.0.0.1:9090:9090
+    volumes:
+      - ./conf/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention=1d'
+    restart: unless-stopped
+
+  perconadb:
+    image: percona:5.7.21
+    hostname: mysql-server
+    networks:
+      local:
+    volumes:
+      - percona-data:/var/lib/mysql
+    restart: unless-stopped
+    environment:
+      - MYSQL_ROOT_PASSWORD=mysql_root_passwd
+      - MYSQL_DATABASE=grafana_db
+      - MYSQL_USER=grafana_u
+      - MYSQL_PASSWORD=grafana_user_passwd
+
+  influxdb:
+    image: influxdb:1.5.2
+    hostname: influxdb-server
+    networks:
+      local:
+    volumes:
+      - influxdb-data:/var/lib/influxdb
+    restart: unless-stopped
+    environment:
+      - INFLUXDB_DB=prometheus_db
+      - INFLUXDB_HTTP_AUTH_ENABLED
+      - INFLUXDB_ADMIN_USER=influx_admin
+      - INFLUXDB_ADMIN_PASSWORD=influx_admin_passwd
+      - INFLUXDB_USER=prometheus_u
+      - INFLUXDB_USER_PASSWORD=prometheus_u_passwd
+
+  smtp:
+    image: catatnight/postfix
+    hostname: smtp-server
+    networks:
+      local:
+    restart: unless-stopped
+    environment:
+      - maildomain=grafana.local
+      - smtp_user=smtp_u:smtp_passwd
+
+  adminer:
+    image: adminer:4.6.2-standalone
+    hostname: adminer
+    networks:
+      local:
+    ports:
+      - 127.0.0.1:8080:8080
+    restart: unless-stopped
+    environment:
+      - ADMINER_DESIGN=nicu
+
+  node_exporter:
+    image: prom/node-exporter:v0.15.2
+    hostname: node-exporter
+    pid: "host"
+    networks:
+      local:
+    ports:
+      - 9100:9100
+    restart: unless-stopped
+
+  cadvisor_exporter:
+    image: google/cadvisor:v0.29.0
+    hostname: cadvisor-exporter
+    networks:
+      local:
+    ports:
+      - 9200:8080
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:rw
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    restart: unless-stopped
+
+networks:
+  local:
+
+volumes:
+  proxy-certs:
+  proxy-dhparam:
+  proxy-vhostd:
+  proxy-challenge:
+  grafana-conf:
+  grafana-data:
+  prometheus-data:
+  percona-data:
+  influxdb-data:
